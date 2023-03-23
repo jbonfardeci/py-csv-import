@@ -1,6 +1,7 @@
 from typing import List, Any
 import csv
 import re
+import logging
 
 
 class ColumnSchema:
@@ -25,6 +26,11 @@ class PyCsvImport:
     __count = 0
     __batch_size = 100
     debug = False
+    
+    def __log(self, msg:str):
+        logging.log(msg=msg, level=logging.INFO)
+        if self.debug:
+            print(msg)
     
     def __get_column_qualifier(self) -> List[str]:
         return list(self.__column_name_qualifier)
@@ -63,7 +69,7 @@ class PyCsvImport:
         return table
 
     def execute_sql(self, commands: List) -> None:
-        print(f"Executing {len(commands)} commands...")
+        self.__log(f"Executing {len(commands)} commands...")
         batch = ';\n'.join(commands)
         conn = self.__connection()
         cursor = conn.cursor()
@@ -78,17 +84,21 @@ class PyCsvImport:
         finally:
             cursor.close()
             conn.close()
-        print(f"{len(commands)} commands executed.")
+        self.__log(f"{len(commands)} commands executed.")
     
-    def execute_batch(self, sql: str) -> None:
+    def execute_batch(self, sql: str, remaining:int) -> None:
         commands:List = self.__commands
-        commands.append(sql)  
-        if len(commands) < self.__batch_size:
+        commands.append(sql)
+        n_cmd:int = len(commands)
+        n_batch:int = self.__batch_size
+        if remaining < n_batch:
+            n_batch = remaining
+        if n_cmd < n_batch:
             return
         self.execute_sql(commands)
         self.__count += len(commands)
         commands.clear()
-        print(f"Executed {self.__count} commands.")
+        self.__log(f"Executed {self.__count} commands.")
         
     def build_sql_insert(self, tablename: str, col_names: List, values: List, schema: List[ColumnSchema]) -> str:
         if len(col_names) != len(values):
@@ -158,10 +168,12 @@ class PyCsvImport:
         Returns:
             str
         """
-        sql_commands = []
-        tablename = f"{table_schema}.{table_name}"
+        sql_commands:List[str] = []
+        tablename:str = f"{table_schema}.{table_name}"
         schema: List[ColumnSchema] = self.get_table_schema(table_name, table_schema)
-        schema_cols = [col.column_name for col in schema]
+        schema_cols:List[str] = [col.column_name for col in schema]
+        list_len:int = len(_list)
+        remaining:int = list_len
         rdr = csv.reader(_list, delimiter=delimiter)
         # Get and clean the column names from the first row.
         col_names = list(map(self.__clean_str, next(rdr)))
@@ -175,16 +187,16 @@ class PyCsvImport:
             # Clean row values.
             values = list(map(self.__clean_str, row))       
             # Remove any column values not in the table schema.
-            write_values = [values[ix] for ix in range(len(values)) if ix not in missing_col_indexes]
-                    
+            write_values = [values[ix] for ix in range(len(values)) if ix not in missing_col_indexes]       
             # Skip malformed rows in CSV.
             if len(write_values) == len(col_names) and len(write_values) > 0: 
                 sql = self.build_sql_insert(tablename, col_names, write_values, schema)
                 if sql_only:
                     sql_commands.append(sql)
                 else:
-                    self.execute_batch(sql)
+                    self.execute_batch(sql, remaining)
             # if
+            remaining -= 1
         # for
         return sql_commands
            
