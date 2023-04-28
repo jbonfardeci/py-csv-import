@@ -243,7 +243,9 @@ class PyCsvImport:
         return f"'{s}'"
 
     def __clean_str(self, s:str) -> str:
-        return re.sub(r'([^\x00-\x7F]|\t|\n|\r\n|"|\')+', '', str(s))
+        s = re.sub(r'"+', '\"', s)
+        s = re.sub(r"'+", "''", s)
+        return re.sub(r'([^\x00-\x7F]|\t|\n|\r\n)+', '', str(s))
     
     def __is_empty(self, s:str) -> bool:
         if s is None:
